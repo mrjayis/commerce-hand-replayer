@@ -6,7 +6,7 @@ seats, hole cards, each action, both boards, and the winners, with a
 
 https://mrjayis.github.io/commerce-hand-replayer/
 
-Filter to one player's hands with the player menu (shareable:
+Filter to the hands one player took to the flop with the player menu (shareable:
 `#p=TONY`), and open any spot in the
 [PLO equity calculator](https://mrjayis.github.io/plo-dbbp-equity-calculator/)
 with the board so far and everyone still in.

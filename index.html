@@ -198,7 +198,7 @@ input[type=range]{flex:1;min-width:160px;accent-color:var(--accent)}
 
 <div class="stage" id="stage"></div>
 <div class="controls">
-  <select id="who" title="only this player's hands"></select>
+  <select id="who" title="only the hands this player took to the flop"></select>
   <select id="pick"></select>
   <button id="prevH" title="previous hand">⏮</button>
   <button id="nextH" title="next hand">⏭</button>
@@ -566,14 +566,29 @@ function calcLink(h,st){
     (rs.length?"&"+rs.join("&"):"")+
     `&a=${a.join("")}`+(two?`&b=${b.join("")}`:"&sb=1")+"&run=1";
 }
-/* player filter: every hand a player was dealt into */
+/* player filter: the hands a player took to the flop. Seen postflop
+ * means the flop was dealt, they did not fold preflop, and something
+ * puts them past it -- an action on a later street, a win, a preflop
+ * all-in, or a bomb pot (no preflop) -- so a preflop fold the scan
+ * missed does not count as seeing a flop */
+function sawFlop(h,name){
+  if(h.board.length<3)return false;
+  let post=false,allin=false;
+  for(const[st,kind,nm]of h.events){
+    if(nm!==name)continue;
+    if(st===0){if(kind==="fold")return false;if(kind==="allin")allin=true;}
+    else post=true;
+  }
+  return post||allin||name in h.winners||!!h.bomb;
+}
 let WHO="",LIST=HANDS;
 const who=document.getElementById("who");
 {
   const cnt={};
-  HANDS.forEach(h=>h.players.forEach(p=>{cnt[p.name]=(cnt[p.name]||0)+1;}));
-  who.innerHTML=`<option value="">All players (${HANDS.length} hands)</option>`+
-    Object.keys(cnt).sort().map(n=>`<option value="${n.replace(/"/g,"&quot;")}">${n} (${cnt[n]})</option>`).join("");
+  HANDS.forEach(h=>h.players.forEach(p=>{
+    if(sawFlop(h,p.name))cnt[p.name]=(cnt[p.name]||0)+1;}));
+  who.innerHTML=`<option value="">All hands (${HANDS.length})</option>`+
+    Object.keys(cnt).sort().map(n=>`<option value="${n.replace(/"/g,"&quot;")}">${n} · ${cnt[n]} postflop</option>`).join("");
 }
 /* picker grouped by video */
 const pick=document.getElementById("pick");
@@ -591,9 +606,9 @@ function fillPick(){
   });
 }
 function setWho(name){
-  WHO=name&&HANDS.some(h=>h.players.some(p=>p.name===name))?name:"";
+  WHO=name&&HANDS.some(h=>sawFlop(h,name))?name:"";
   who.value=WHO;
-  LIST=WHO?HANDS.filter(h=>h.players.some(p=>p.name===WHO)):HANDS;
+  LIST=WHO?HANDS.filter(h=>sawFlop(h,WHO)):HANDS;
   fillPick();
 }
 setWho("");
