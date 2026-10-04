@@ -562,7 +562,8 @@ function calcLink(h,st){
   // run-it-twice (no card shared) loads as one; a rerun that shares its
   // flop opens on the first runout
   const two=b.length>0&&!b.some(c=>a.includes(c));
-  return CALC+`#cards=${ncards}&n=${live.length}&seats=${seats.join(",")}`+
+  const names=live.map(p=>encodeURIComponent(p.name.replace(/,/g," "))).join(",");
+  return CALC+`#cards=${ncards}&n=${live.length}&seats=${seats.join(",")}&names=${names}`+
     (rs.length?"&"+rs.join("&"):"")+
     `&a=${a.join("")}`+(two?`&b=${b.join("")}`:"&sb=1")+"&run=1";
 }
