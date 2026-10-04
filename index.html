@@ -573,7 +573,7 @@ function calcLink(h,st){
  * all-in, or a bomb pot (no preflop) -- so a preflop fold the scan
  * missed does not count as seeing a flop */
 function sawFlop(h,name){
-  if(h.board.length<3)return false;
+  if(h.board.length<3||!h.players.some(p=>p.name===name))return false;
   let post=false,allin=false;
   for(const[st,kind,nm]of h.events){
     if(nm!==name)continue;
