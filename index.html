@@ -131,11 +131,12 @@ h1{font-family:"Avenir Next Condensed","Arial Narrow",Impact,sans-serif;
 /* ---- controls (outside the stage) ---- */
 .controls{margin-top:14px;display:flex;flex-wrap:wrap;gap:10px;
   align-items:center}
-select,button{background:var(--panel);color:var(--ink);
+a.btn{text-decoration:none;font-weight:600;display:inline-block}
+select,button,a.btn{background:var(--panel);color:var(--ink);
   border:1px solid var(--line);border-radius:6px;font:inherit;
   font-size:13.5px;padding:5px 10px}
 button{cursor:pointer;font-weight:600}
-button:hover{border-color:var(--accent)}
+button:hover,a.btn:hover{border-color:var(--accent)}
 button:disabled{opacity:.4;cursor:default}
 select{max-width:420px}
 .streets{display:flex;gap:6px}
@@ -197,12 +198,15 @@ input[type=range]{flex:1;min-width:160px;accent-color:var(--accent)}
 
 <div class="stage" id="stage"></div>
 <div class="controls">
+  <select id="who" title="only this player's hands"></select>
   <select id="pick"></select>
   <button id="prevH" title="previous hand">⏮</button>
   <button id="nextH" title="next hand">⏭</button>
   <span class="streets" id="streets"></span>
   <button id="back">◀ back</button>
   <button id="fwd">action ▶</button>
+  <a class="btn" id="calc" target="_blank" rel="noopener"
+     title="open this spot in the equity calculator: the board so far and everyone still in">⚖ Equity calculator</a>
   <button hidden id="exp" title="render this hand and save it">⤓ MP4</button>
   <input type="range" id="slide" min="0" value="0">
 </div>
@@ -474,7 +478,9 @@ function render(){
       I=sn===99?S.length-1:S.findIndex(s=>s.k==="deal"&&s.st===sn);
       if(I<0)I=0;sync();};
   });
-  history.replaceState(null,"",`#h=${H.no}&a=${I}`);
+  history.replaceState(null,"",`#h=${H.no}&a=${I}`+
+    (WHO?`&p=${encodeURIComponent(WHO)}`:""));
+  document.getElementById("calc").href=calcLink(H,state(H,S,I));
 }
 /* Export: the page cannot run Chrome or ffmpeg, so the button asks the
    local helper (tools/export_server.py) to render with the very same
@@ -536,11 +542,45 @@ function setHand(no,a){
   I=Math.min(a??0,S.length-1);
   document.getElementById("pick").value=H.no;render();
 }
+/* the equity calculator, loaded with this step: the board dealt so far
+ * and everyone still in. A player whose cards the stream never showed
+ * goes in as an unknown hand (Xx wildcards); a run-it-twice hand opens
+ * both boards, anything else single-board */
+const CALC="https://mrjayis.github.io/plo-dbbp-equity-calculator/";
+function calcLink(h,st){
+  const ncards=(h.players.find(p=>p.cards)||{cards:[1,2,3,4]}).cards.length;
+  const live=h.players.filter(p=>!st.folded[p.name]);
+  const seats=[],rs=[];
+  live.forEach((p,k)=>{
+    if(p.cards&&p.cards.length===ncards)seats.push(p.cards.join(""));
+    else{seats.push("-");rs.push(`r${k+1}=`+encodeURIComponent(Array(ncards).fill("Xx").join(" ")));}
+  });
+  const upto={0:0,1:3,2:4,3:5}[st.street]??0;
+  const slots=st.end?5:upto;
+  const a=h.board.slice(0,slots),b=h.board2.slice(0,slots);
+  // the calculator deals two separate boards, so only a preflop
+  // run-it-twice (no card shared) loads as one; a rerun that shares its
+  // flop opens on the first runout
+  const two=b.length>0&&!b.some(c=>a.includes(c));
+  return CALC+`#cards=${ncards}&n=${live.length}&seats=${seats.join(",")}`+
+    (rs.length?"&"+rs.join("&"):"")+
+    `&a=${a.join("")}`+(two?`&b=${b.join("")}`:"&sb=1")+"&run=1";
+}
+/* player filter: every hand a player was dealt into */
+let WHO="",LIST=HANDS;
+const who=document.getElementById("who");
+{
+  const cnt={};
+  HANDS.forEach(h=>h.players.forEach(p=>{cnt[p.name]=(cnt[p.name]||0)+1;}));
+  who.innerHTML=`<option value="">All players (${HANDS.length} hands)</option>`+
+    Object.keys(cnt).sort().map(n=>`<option value="${n.replace(/"/g,"&quot;")}">${n} (${cnt[n]})</option>`).join("");
+}
 /* picker grouped by video */
 const pick=document.getElementById("pick");
-{
+function fillPick(){
+  pick.innerHTML="";
   let cur=null,og=null;
-  HANDS.forEach(h=>{
+  LIST.forEach(h=>{
     if(h.src!==cur){cur=h.src;og=document.createElement("optgroup");
       og.label=TITLES[h.src]||h.src;pick.appendChild(og);}
     const o=document.createElement("option");o.value=h.no;
@@ -550,6 +590,16 @@ const pick=document.getElementById("pick");
     og.appendChild(o);
   });
 }
+function setWho(name){
+  WHO=name&&HANDS.some(h=>h.players.some(p=>p.name===name))?name:"";
+  who.value=WHO;
+  LIST=WHO?HANDS.filter(h=>h.players.some(p=>p.name===WHO)):HANDS;
+  fillPick();
+}
+setWho("");
+who.onchange=()=>{setWho(who.value);
+  // stay on this hand if the player is in it, else open their latest
+  setHand(LIST.some(h=>h.no===H.no)?H.no:LIST[LIST.length-1].no,0);};
 pick.onchange=()=>setHand(+pick.value,0);
 document.getElementById("exp").onclick=e=>exportHand(e.shiftKey?"gif":"mp4");
 document.getElementById("exp").title=
@@ -557,8 +607,8 @@ document.getElementById("exp").title=
 document.getElementById("fwd").onclick=()=>{if(I<S.length-1){I++;sync();}};
 document.getElementById("back").onclick=()=>{if(I>0){I--;sync();}};
 document.getElementById("slide").oninput=e=>{I=+e.target.value;sync();};
-const move=d=>{const i=HANDS.findIndex(h=>h.no===H.no)+d;
-  if(i>=0&&i<HANDS.length)setHand(HANDS[i].no,0);};
+const move=d=>{const i=LIST.findIndex(h=>h.no===H.no)+d;
+  if(i>=0&&i<LIST.length)setHand(LIST[i].no,0);};
 document.getElementById("prevH").onclick=()=>move(-1);
 document.getElementById("nextH").onclick=()=>move(1);
 /* tap the stage to step: right half forward, left half back */
@@ -602,12 +652,16 @@ function fromHash(){
       return m?+m[1]:null;};
     return filmstrip(+f[1],g("w")||968,g("from")||0,g("n"));
   }
+  const pm=location.hash.match(/[#&]p=([^&]+)/);
+  const pn=pm?decodeURIComponent(pm[1]):"";
+  if(pn!==WHO)setWho(pn);
   const m=location.hash.match(/h=(\d+)(?:&a=(\d+))?/);
-  setHand(m?+m[1]:HANDS[HANDS.length-1].no,m&&m[2]?+m[2]:0);
+  setHand(m?+m[1]:LIST[LIST.length-1].no,m&&m[2]?+m[2]:0);
 }
 window.addEventListener("hashchange",()=>{
   const m=location.hash.match(/h=(\d+)(?:&a=(\d+))?/);
-  if(!m||+m[1]!==H.no||+(m[2]||0)!==I)fromHash();
+  const pm=location.hash.match(/[#&]p=([^&]+)/);
+  if(!m||+m[1]!==H.no||+(m[2]||0)!==I||(pm?decodeURIComponent(pm[1]):"")!==WHO)fromHash();
 });
 fromHash();
 </script>
