@@ -286,6 +286,19 @@ function btnOf(h){
   return si>=0&&n>1?h.players[(si-1+n)%n].name:null;
 }
 
+/* pot odds on the action tags. A call shows the equity it needed: what it
+   adds over the pot it would then win. A bet or raise shows the equity it
+   asks of a caller who had matched the previous bet: the raise over that
+   bet, against the pot after the wager plus the call. */
+function oddsTxt(x){return ` · ${Math.round(100*x)}%`;}
+function callOdds(pot,add){return add>0?oddsTxt(add/(pot+add)):"";}
+function wagerOdds(pot,maxB,mine,to){
+  const over=to-maxB;
+  if(over<=0)return "";
+  const after=pot+(to-mine);
+  return oddsTxt(over/(after+over))+" to call";
+}
+
 /* state after step i: bets are per-street; call amts are increments,
    bet/raise/straddle/allin amts are street totals (see module doc) */
 function state(h,S,i){
@@ -321,6 +334,11 @@ function state(h,S,i){
     }
     const[,kind,name,amt]=s.e;
     st.actor=name;
+    // the pot and the price as this action meets them, for the odds tags
+    let potB=base;
+    for(const n in commit)potB+=commit[n];
+    for(const n in st.bets)potB+=st.bets[n];
+    const maxB=Math.max(0,...Object.values(st.bets)),mineB=st.bets[name]||0;
     if(kind==="fold"){st.folded[name]=1;st.act[name]=["folds","fold"];}
     else if(kind==="check")st.act[name]=["checks",""];
     else if(kind==="call"){
@@ -333,13 +351,14 @@ function state(h,S,i){
           p.stack-(commit[name]||0)-(st.bets[name]||0)));
       }
       st.bets[name]=(st.bets[name]||0)+add;
-      st.act[name]=["calls "+fmt(add),"hot"];}
+      st.act[name]=["calls "+fmt(add)+callOdds(potB,add),"hot"];}
     else if(kind==="bet"){st.bets[name]=amt||0;
-      st.act[name]=["bets "+fmt(amt||0),"hot"];}
+      st.act[name]=["bets "+fmt(amt||0)+wagerOdds(potB,maxB,mineB,amt||0),"hot"];}
     else if(kind==="raise"){st.bets[name]=amt||0;
-      st.act[name]=["raises to "+fmt(amt||0),"hot"];}
+      st.act[name]=["raises to "+fmt(amt||0)+wagerOdds(potB,maxB,mineB,amt||0),"hot"];}
     else if(kind==="allin"){st.bets[name]=amt||0;st.allin[name]=1;
-      st.act[name]=["all-in "+fmt(amt||0),"hot"];}
+      st.act[name]=["all-in "+fmt(amt||0)+((amt||0)>maxB?wagerOdds(potB,maxB,mineB,amt||0):
+        callOdds(potB,Math.max(0,(amt||0)-mineB))),"hot"];}
   }
   let pot=base;
   for(const n in commit)pot+=commit[n];
@@ -598,6 +617,10 @@ function editHTML(){
       const parts=[`pot ${fmt(pre.pot)}`];
       if(toCall>0)parts.push(`to call ${fmt(toCall)} · needs `+
         `${Math.round(100*toCall/(pre.pot+toCall))}%`);
+      if(["bet","raise","allin"].includes(e[1])&&e[3]!=null&&e[3]>pre.maxBet){
+        const w=wagerOdds(pre.pot,pre.maxBet,pre.bets[e[2]]||0,e[3]);
+        parts.push(`caller needs${w.replace(" · "," ").replace(" to call","")}`);
+      }
       if(["bet","raise","allin"].includes(e[1])){
         const over=e[3]!=null&&e[3]>max;
         parts.push(`<span class="${over?"bad":""}">PL max to ${fmt(max)}</span>`);
